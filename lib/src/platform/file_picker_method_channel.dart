@@ -157,6 +157,39 @@ class MethodChannelFilePicker extends FilePickerPlatform {
   }
 
   @override
+  Future<StoragePermissionStatus> checkStoragePermission() async {
+    if (!Platform.isAndroid) return StoragePermissionStatus.notApplicable;
+    final String? status =
+        await methodChannel.invokeMethod<String>('checkStoragePermission');
+    return _parsePermissionStatus(status);
+  }
+
+  @override
+  Future<StoragePermissionStatus> requestStoragePermission({
+    Set<AndroidMediaPermissionType> mediaTypes = const {
+      AndroidMediaPermissionType.images,
+      AndroidMediaPermissionType.video,
+      AndroidMediaPermissionType.audio,
+    },
+  }) async {
+    if (!Platform.isAndroid) return StoragePermissionStatus.notApplicable;
+    final String? status = await methodChannel.invokeMethod<String>(
+      'requestStoragePermission',
+      {'mediaTypes': mediaTypes.map((e) => e.name).toList()},
+    );
+    return _parsePermissionStatus(status);
+  }
+
+  StoragePermissionStatus _parsePermissionStatus(String? status) {
+    return switch (status) {
+      'granted' => StoragePermissionStatus.granted,
+      'denied' => StoragePermissionStatus.denied,
+      'permanentlyDenied' => StoragePermissionStatus.permanentlyDenied,
+      _ => StoragePermissionStatus.notApplicable,
+    };
+  }
+
+  @override
   Future<String?> saveFile({
     String? dialogTitle,
     required String fileName,

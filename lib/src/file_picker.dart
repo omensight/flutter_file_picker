@@ -294,4 +294,44 @@ abstract final class FilePicker {
   static Future<void> skipEntitlementsChecks() {
     return FilePickerPlatform.instance.skipEntitlementsChecks();
   }
+
+  /// Checks the current Android storage permission status without showing any
+  /// system dialog.
+  ///
+  /// Returns [StoragePermissionStatus.notApplicable] on non-Android platforms.
+  ///
+  /// Use this to conditionally show rationale UI before calling
+  /// [requestStoragePermission], or to verify the grant before performing
+  /// file operations.
+  static Future<StoragePermissionStatus> checkStoragePermission() {
+    return FilePickerPlatform.instance.checkStoragePermission();
+  }
+
+  /// Requests Android storage read permission appropriate for the running API
+  /// level.
+  ///
+  /// - **API ≤ 32**: requests `READ_EXTERNAL_STORAGE`.
+  /// - **API 33+**: requests `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, and/or
+  ///   `READ_MEDIA_AUDIO` based on [mediaTypes]. Pass a subset to request only
+  ///   the categories your app needs.
+  ///
+  /// Returns [StoragePermissionStatus.notApplicable] on non-Android platforms.
+  ///
+  /// When [StoragePermissionStatus.permanentlyDenied] is returned, the user
+  /// has selected "Don't ask again" and you must guide them to the app's
+  /// Settings screen manually.
+  ///
+  /// When storage permission is granted, [pickFiles] will return real
+  /// filesystem paths (e.g. `/storage/emulated/0/…`) instead of cached copies.
+  static Future<StoragePermissionStatus> requestStoragePermission({
+    Set<AndroidMediaPermissionType> mediaTypes = const {
+      AndroidMediaPermissionType.images,
+      AndroidMediaPermissionType.video,
+      AndroidMediaPermissionType.audio,
+    },
+  }) {
+    return FilePickerPlatform.instance.requestStoragePermission(
+      mediaTypes: mediaTypes,
+    );
+  }
 }

@@ -33,6 +33,7 @@ class _FilePickerDemoState extends State<FilePickerDemo> {
   bool _safPersist = false;
   bool _safReadWrite = false;
   bool _supportsSafOptions = false;
+  StoragePermissionStatus? _storagePermissionStatus;
   FileType _pickingType = FileType.any;
   List<PlatformFile>? pickedFiles;
   Widget _resultsWidget = const Row(
@@ -305,6 +306,18 @@ class _FilePickerDemoState extends State<FilePickerDemo> {
         },
       );
     });
+  }
+
+  Future<void> _checkStoragePermission() async {
+    final status = await FilePicker.checkStoragePermission();
+    if (!mounted) return;
+    setState(() => _storagePermissionStatus = status);
+  }
+
+  Future<void> _requestStoragePermission() async {
+    final status = await FilePicker.requestStoragePermission();
+    if (!mounted) return;
+    setState(() => _storagePermissionStatus = status);
   }
 
   void _logException(String message) {
@@ -636,6 +649,40 @@ class _FilePickerDemoState extends State<FilePickerDemo> {
                     children: actionButtons,
                   ),
                 ),
+                if (_supportsSafOptions) ...[
+                  const Divider(),
+                  const SizedBox(height: 20.0),
+                  const Text(
+                    'Storage Permission (Android)',
+                    textAlign: TextAlign.start,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                  ),
+                  const SizedBox(height: 8.0),
+                  const Text(
+                    'When granted, pickFiles() returns real filesystem paths instead of cached copies.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16.0),
+                  _StoragePermissionStatus(status: _storagePermissionStatus),
+                  const SizedBox(height: 12.0),
+                  Wrap(
+                    spacing: 10.0,
+                    runSpacing: 10.0,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _checkStoragePermission,
+                        icon: const Icon(Icons.info_outline),
+                        label: const Text('Check permission'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _requestStoragePermission,
+                        icon: const Icon(Icons.lock_open),
+                        label: const Text('Request permission'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20.0),
+                ],
                 const Divider(),
                 const SizedBox(height: 20.0),
                 const Text(
@@ -654,4 +701,47 @@ class _FilePickerDemoState extends State<FilePickerDemo> {
   }
 
   void printInDebug(Object object) => debugPrint(object.toString());
+}
+
+class _StoragePermissionStatus extends StatelessWidget {
+  const _StoragePermissionStatus({required this.status});
+
+  final StoragePermissionStatus? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, icon, color) = switch (status) {
+      null => ('Not checked yet', Icons.help_outline, Colors.grey),
+      StoragePermissionStatus.granted => (
+        'Granted — real file paths will be returned',
+        Icons.check_circle_outline,
+        Colors.green,
+      ),
+      StoragePermissionStatus.denied => (
+        'Denied — tap "Request permission" to try again',
+        Icons.block,
+        Colors.orange,
+      ),
+      StoragePermissionStatus.permanentlyDenied => (
+        'Permanently denied — open Settings to grant manually',
+        Icons.no_encryption_outlined,
+        Colors.red,
+      ),
+      StoragePermissionStatus.notApplicable => (
+        'Not applicable on this platform',
+        Icons.info_outline,
+        Colors.grey,
+      ),
+    };
+
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(label, style: TextStyle(color: color, fontSize: 13)),
+        ),
+      ],
+    );
+  }
 }

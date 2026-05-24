@@ -99,4 +99,28 @@ abstract class FilePickerPlatform extends PlatformInterface {
     // By default, do nothing.
     // This is only relevant for macOS, and the method is overridden there.
   }
+
+  /// Checks the current Android storage permission status without showing any
+  /// system dialog. Returns [StoragePermissionStatus.notApplicable] on
+  /// non-Android platforms.
+  Future<StoragePermissionStatus> checkStoragePermission() async {
+    return StoragePermissionStatus.notApplicable;
+  }
+
+  /// Requests Android storage read permission appropriate for the running API
+  /// level:
+  /// - API ≤ 32 → READ_EXTERNAL_STORAGE
+  /// - API 33+ → READ_MEDIA_IMAGES / READ_MEDIA_VIDEO / READ_MEDIA_AUDIO
+  ///   (filtered by [mediaTypes])
+  ///
+  /// Returns [StoragePermissionStatus.notApplicable] on non-Android platforms.
+  Future<StoragePermissionStatus> requestStoragePermission({
+    Set<AndroidMediaPermissionType> mediaTypes = const {
+      AndroidMediaPermissionType.images,
+      AndroidMediaPermissionType.video,
+      AndroidMediaPermissionType.audio,
+    },
+  }) async {
+    return StoragePermissionStatus.notApplicable;
+  }
 }
