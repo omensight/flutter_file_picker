@@ -1,8 +1,10 @@
 package com.mr.flutter.plugin.filepicker
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -11,9 +13,11 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Parcelable
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.mr.flutter.plugin.filepicker.FilePickerDelegate.Companion.REQUEST_CODE
 import com.mr.flutter.plugin.filepicker.FilePickerDelegate.Companion.SAVE_FILE_CODE
@@ -642,6 +646,76 @@ object FileUtils {
         return File.createTempFile(imageFileName, "." + getCompressFormatBasedFileExtension(compressFormat), storageDir)
     }
 
+    fun hasStoragePermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_AUDIO
+            ).any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+        } else {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    fun resolveRealPath(context: Context, uri: Uri): String? {
+        // Strategy 1: file:// URI — path is already a real filesystem path.
+        if (uri.scheme == "file") {
+            return uri.path
+        }
+
+        if (uri.scheme != "content") return null
+
+        // Strategy 2: Query MediaStore DATA column (works for media and download providers).
+        try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.MediaColumns.DATA),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val col = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (col >= 0) {
+                        val path = cursor.getString(col)
+                        if (!path.isNullOrBlank()) return path
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "MediaStore DATA query failed for $uri: $e")
+        }
+
+        // Strategy 3: Downloads document tree — reuse existing path resolver.
+        if (isDownloadsDocument(uri)) {
+            try {
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(
+                    uri,
+                    DocumentsContract.getTreeDocumentId(uri)
+                )
+                val path = getFullPathFromTreeUri(docUri, context)
+                if (!path.isNullOrBlank()) return path
+            } catch (e: Exception) {
+                Log.w(TAG, "Downloads path resolution failed for $uri: $e")
+            }
+        }
+
+        // Strategy 4: Raw path embedded in content URI (some providers expose /storage/… directly).
+        uri.path?.let { rawPath ->
+            val cleaned = when {
+                rawPath.startsWith("/storage/") -> rawPath
+                rawPath.startsWith("/sdcard/") ->
+                    rawPath.replaceFirst("/sdcard/", "/storage/emulated/0/")
+                else -> null
+            }
+            if (cleaned != null && File(cleaned).exists()) return cleaned
+        }
+
+        return null
+    }
+
     /**
      * @param uri The Uri to check.
      * @return Whether the Uri authority is DownloadsProvider.
@@ -690,22 +764,48 @@ object FileUtils {
 
     @JvmStatic
     fun openFileStream(
-        context: Context, 
-        uri: Uri, 
+        context: Context,
+        uri: Uri,
         withData: Boolean,
         hasSafOptions: Boolean = false,
         isReadWrite: Boolean = false
     ): FileInfo? {
-        var fileInputStream: InputStream? = null
-        var fileOutputStream: FileOutputStream? = null
         val fileInfo = FileInfo.Builder()
         val fileName = getFileName(uri, context)
+
+        // When storage permission is granted, try to return the real filesystem
+        // path directly instead of copying to the app cache.
+        if (hasStoragePermission(context)) {
+            val realPath = resolveRealPath(context, uri)
+            if (realPath != null) {
+                val realFile = File(realPath)
+                if (realFile.exists() && realFile.canRead()) {
+                    if (withData) loadData(realFile, fileInfo)
+                    fileInfo
+                        .withPath(realPath)
+                        .withName(fileName)
+                        .withUri(uri)
+                        .withSize(realFile.length())
+                    if (hasSafOptions) {
+                        val safHandleMap = java.util.HashMap<String, Any>()
+                        safHandleMap["uri"] = uri.toString()
+                        safHandleMap["access"] = if (isReadWrite) "readWrite" else "readOnly"
+                        fileInfo.withSafHandle(safHandleMap)
+                    }
+                    return fileInfo.build()
+                }
+            }
+        }
+
+        // Fall back to the cache-copy path (cloud providers, SAF-only URIs, etc.)
+        var fileInputStream: InputStream? = null
+        var fileOutputStream: FileOutputStream? = null
         val path =
             context.cacheDir.absolutePath + "/file_picker/" + System.currentTimeMillis() + "/" + (fileName
                 ?: "unamed")
 
         val file = File(path)
-        
+
         val safeDir = File(context.cacheDir.absolutePath + "/file_picker/").canonicalPath
         if (!file.canonicalPath.startsWith(safeDir)) {
             throw SecurityException("Path traversal detected. Escaping the intended cache directory is not allowed.")
