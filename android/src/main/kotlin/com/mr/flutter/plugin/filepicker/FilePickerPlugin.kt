@@ -130,6 +130,19 @@ class FilePickerPlugin : MethodCallHandler, FlutterPlugin,
                 result.success(activity?.applicationContext?.let { clearCache(it) })
             }
 
+            "checkStoragePermission" -> {
+                delegate?.checkStoragePermission(result)
+                    ?: result.success("notApplicable")
+            }
+
+            "requestStoragePermission" -> {
+                val mediaTypes =
+                    (arguments?.get("mediaTypes") as? List<*>)?.filterIsInstance<String>()
+                        ?: emptyList()
+                delegate?.requestStoragePermission(mediaTypes, result)
+                    ?: result.success("notApplicable")
+            }
+
             "releaseSafGrant" -> {
                 val uriStr = arguments?.get("uri") as? String
                 if (uriStr == null) {
@@ -224,6 +237,7 @@ class FilePickerPlugin : MethodCallHandler, FlutterPlugin,
 
             // V2 embedding setup for activity listeners.
             activityBinding.addActivityResultListener(it)
+            activityBinding.addRequestPermissionsResultListener(it)
             this.lifecycle = FlutterLifecycleAdapter.getActivityLifecycle(activityBinding)
             observer?.let { it -> lifecycle?.addObserver(it) }
         }
@@ -232,6 +246,7 @@ class FilePickerPlugin : MethodCallHandler, FlutterPlugin,
     private fun tearDown() {
         delegate?.let { it ->
             activityBinding?.removeActivityResultListener(it)
+            activityBinding?.removeRequestPermissionsResultListener(it)
         }
         this.activityBinding = null
         observer?.let { it ->
