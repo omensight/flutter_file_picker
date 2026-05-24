@@ -688,17 +688,37 @@ object FileUtils {
             Log.w(TAG, "MediaStore DATA query failed for $uri: $e")
         }
 
-        // Strategy 3: Downloads document tree — reuse existing path resolver.
+        // Strategy 3a: External storage document provider — decode "primary:path/to/file" doc IDs.
+        if (uri.authority == "com.android.externalstorage.documents") {
+            try {
+                val docId = DocumentsContract.getDocumentId(uri)
+                val parts = docId.split(":")
+                if (parts.size >= 2) {
+                    val volumeId = parts[0]
+                    val relativePath = parts.drop(1).joinToString(":")
+                    val basePath = if ("primary".equals(volumeId, ignoreCase = true)) {
+                        Environment.getExternalStorageDirectory().absolutePath
+                    } else {
+                        "/storage/$volumeId"
+                    }
+                    val path = "$basePath/$relativePath"
+                    if (File(path).exists()) return path
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "ExternalStorage doc path resolution failed for $uri: $e")
+            }
+        }
+
+        // Strategy 3b: Downloads document provider — decode document URIs directly.
         if (isDownloadsDocument(uri)) {
             try {
-                val docUri = DocumentsContract.buildDocumentUriUsingTree(
-                    uri,
-                    DocumentsContract.getTreeDocumentId(uri)
-                )
-                val path = getFullPathFromTreeUri(docUri, context)
-                if (!path.isNullOrBlank()) return path
+                val docId = DocumentsContract.getDocumentId(uri)
+                if (docId.startsWith("raw:")) {
+                    val path = docId.removePrefix("raw:")
+                    if (File(path).exists()) return path
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "Downloads path resolution failed for $uri: $e")
+                Log.w(TAG, "Downloads doc path resolution failed for $uri: $e")
             }
         }
 
